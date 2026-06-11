@@ -1,0 +1,67 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "agentready API",
+    "version": "0.2.0",
+    "description": "Audit any website for AI-agent readiness. Returns a score, grade, and per-check results.",
+    "contact": { "name": "Loop XXI", "url": "https://loopxxi.com" },
+    "license": { "name": "MIT" }
+  },
+  "servers": [{ "url": "https://agentready.loopxxi.com" }],
+  "paths": {
+    "/api/audit": {
+      "post": {
+        "summary": "Audit a URL for agent-readiness",
+        "operationId": "auditUrl",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["url"],
+                "properties": {
+                  "url": { "type": "string", "example": "example.com", "description": "URL or domain to audit" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Audit result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "origin": { "type": "string" },
+                    "version": { "type": "string" },
+                    "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+                    "grade": { "type": "string", "enum": ["A", "B", "C", "D", "F"] },
+                    "checks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": { "type": "string" },
+                          "label": { "type": "string" },
+                          "weight": { "type": "integer" },
+                          "category": { "type": "string" },
+                          "points": { "type": "integer" },
+                          "pass": { "type": "boolean" },
+                          "detail": { "type": "string" },
+                          "fix": { "type": "string" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

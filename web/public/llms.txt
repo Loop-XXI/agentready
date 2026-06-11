@@ -1,0 +1,54 @@
+# agentready
+
+> Audit any website for AI-agent readiness. Get an instant score and AI-powered fix suggestions.
+
+**Tool**: https://agentready.loopxxi.com  
+**CLI**: `npx agentready yoursite.com`  
+**Source**: https://github.com/Loop-XXI/agentready
+
+## What We Check
+
+- [llms.txt](https://llmstxt.org) — the primary LLM discovery index
+- [llms-full.txt](https://llmstxt.org) — full flattened site content for agents
+- robots.txt — presence and AI crawler policy
+- sitemap.xml — page enumeration for agents
+- Structured data (JSON-LD / schema.org) — fact extraction without scraping
+- OpenAPI spec — API discoverability at common paths
+- MCP manifest — Model Context Protocol tool discovery
+- .well-known surface — security.txt, ai-plugin.json
+- RSS/Atom feed — content monitoring
+- Title + meta description + Open Graph tags
+- Markdown content negotiation
+- HTTPS + response speed
+
+## Usage
+
+```
+npx agentready yoursite.com
+npx agentready yoursite.com --json
+```
+
+## API
+
+```
+POST https://agentready.loopxxi.com/api/audit
+Content-Type: application/json
+{"url": "yoursite.com"}
+```
+
+Returns full JSON audit result with scores, grades, and fix suggestions.
+
+## Score Grades
+
+| Grade | Score | Meaning |
+|-------|-------|---------|
+| A | 90–100 | Fully agent-ready |
+| B | 75–89 | Strong — minor gaps |
+| C | 60–74 | Functional — notable gaps |
+| D | 40–59 | Partial — significant gaps |
+| F | 0–39 | Not agent-ready |
+
+## About
+
+Built by [Loop XXI](https://loopxxi.com) — technology that compounds.  
+MIT License.
