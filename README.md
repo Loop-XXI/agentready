@@ -90,7 +90,11 @@ Weighted: `llms.txt` (20), robots/sitemap/JSON-LD/meta/OpenAPI (10 each), the re
 
 We build everything agent-accessible from day one, and kept needing a quick way to answer "can an agent actually use this site?" Nothing did the whole job, so we made the checklist executable.
 
-Built by [Loop XXI](https://loopxxi.com).
+---
+
+Built by [LoopXXI](https://loopxxi.com) — a technology holding company.
+
+[![LoopXXI](https://v3b.fal.media/files/b/0a9dddf8/YUX2k4J6nIFg_ibxmu521_VaO7Qp9J.png)](https://loopxxi.com)
 
 ## License
 
