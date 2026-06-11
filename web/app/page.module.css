@@ -389,3 +389,217 @@
 }
 
 .footerLink:hover { color: #e8e6df; }
+
+/* ---------- AI action buttons ---------- */
+
+.aiActions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.aiBtn {
+  background: #f7c948;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 20px;
+  color: #0a0a0a;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: opacity 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.aiBtn:hover:not(:disabled) { opacity: 0.85; }
+.aiBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.aiBtnFree {
+  background: transparent;
+  border: 1px solid #1f1e1b;
+  border-radius: 8px;
+  padding: 8px 16px;
+  color: #8a877e;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.aiBtnFree:hover:not(:disabled) { border-color: #595550; color: #e8e6df; }
+.aiBtnFree:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.paidTag {
+  font-size: 13px;
+  color: #f7c948;
+  font-weight: 600;
+}
+
+/* ---------- modal ---------- */
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 24px;
+}
+
+.modal {
+  background: #141412;
+  border: 1px solid #1f1e1b;
+  border-radius: 12px;
+  width: 100%;
+  max-width: 440px;
+  overflow: hidden;
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 20px 0;
+}
+
+.modalTitle {
+  font-size: 15px;
+  font-weight: 600;
+  color: #e8e6df;
+  display: flex;
+  align-items: center;
+}
+
+.modalClose {
+  background: none;
+  border: none;
+  color: #595550;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+  transition: color 0.15s;
+}
+
+.modalClose:hover { color: #e8e6df; }
+
+.modalBody {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.modalLede {
+  font-size: 14px;
+  color: #8a877e;
+  margin: 0;
+  line-height: 1.55;
+}
+
+.invoiceBox {
+  background: #0a0a0a;
+  border: 1px solid #1f1e1b;
+  border-radius: 8px;
+  padding: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.invoiceText {
+  font-size: 12px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  color: #595550;
+  margin: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.copyBtn {
+  background: #1f1e1b;
+  border: none;
+  border-radius: 5px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: #e8e6df;
+  font-family: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s;
+}
+
+.copyBtn:hover { background: #2a2825; }
+
+.walletBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f7c948;
+  color: #0a0a0a;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 13px;
+  transition: opacity 0.15s;
+  gap: 4px;
+}
+
+.walletBtn:hover { opacity: 0.85; }
+
+.pollRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pollDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f7c948;
+  display: inline-block;
+  animation: pulse 1.2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.pollLabel {
+  font-size: 13px;
+  color: #8a877e;
+}
+
+.expiry {
+  font-size: 12px;
+  color: #595550;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.modalNote {
+  font-size: 12px;
+  color: #595550;
+  margin: 0;
+  text-align: center;
+}
+
+.paidBadge {
+  background: #1a2b1a;
+  border: 1px solid #2a4a2a;
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 600;
+  color: #4ade80;
+}
