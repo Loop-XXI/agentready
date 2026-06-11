@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-// Minimal test harness for agentready. Spins a local server with known
-// surfaces, runs the auditor against it, asserts on the JSON output.
+// Test harness for agentready — spins a local server, runs the auditor, asserts on JSON output.
 "use strict";
 const http = require("http");
 const { execFile } = require("child_process");
@@ -8,15 +7,16 @@ const path = require("path");
 
 const PAGES = {
   "/": `<!doctype html><html><head><title>Test Site</title>
-<meta name="description" content="A test site">
+<meta name="description" content="A test site for agentready">
 <meta property="og:title" content="Test"><meta property="og:description" content="t">
 <script type="application/ld+json">{"@type":"Organization","name":"Test"}</script>
 </head><body>hello</body></html>`,
   "/llms.txt": "# Test Site\n\n- [Docs](https://example.com/docs)\n",
   "/robots.txt": "User-agent: *\nAllow: /\nSitemap: SITEMAP_URL\n",
   "/sitemap.xml": `<?xml version="1.0"?><urlset><url><loc>x</loc></url></urlset>`,
-  "/openapi.json": `{"openapi":"3.0.0"}`,
+  "/openapi.json": `{"openapi":"3.0.0","info":{"title":"Test API","version":"1.0.0"}}`,
   "/.well-known/security.txt": "Contact: mailto:sec@example.com\n",
+  "/.well-known/mcp.json": `{"name":"test","tools":[]}`,
   "/feed.xml": `<rss version="2.0"><channel></channel></rss>`,
 };
 
@@ -43,6 +43,8 @@ server.listen(0, "127.0.0.1", () => {
     if (!j.checks) fail("no checks in output: " + (j.error || ""));
 
     const byId = Object.fromEntries(j.checks.map((c) => [c.id, c]));
+
+    // Core checks
     if (!byId["llms-txt"].pass) fail("llms.txt should pass");
     if (!byId["robots"].pass) fail("robots should pass");
     if (!byId["sitemap"].pass) fail("sitemap should pass");
@@ -50,10 +52,18 @@ server.listen(0, "127.0.0.1", () => {
     if (!byId["meta"].pass) fail("meta should pass");
     if (!byId["openapi"].pass) fail("openapi should pass");
     if (!byId["well-known"].pass) fail("well-known should pass");
+    if (!byId["mcp-manifest"].pass) fail("mcp-manifest should pass");
     if (!byId["feed"].pass) fail("feed should pass");
     if (byId["https"].pass) fail("https should FAIL on http://");
     if (typeof j.score !== "number") fail("score missing");
-    console.log(`OK — all assertions passed (score ${j.score}, grade ${j.grade})`);
+    if (!["A","B","C","D","F"].includes(j.grade)) fail("invalid grade: " + j.grade);
+
+    // Verify category fields present
+    for (const c of j.checks) {
+      if (!c.category) fail("check missing category: " + c.id);
+    }
+
+    console.log(`OK — all assertions passed (score ${j.score}, grade ${j.grade}, ${j.checks.length} checks)`);
     process.exit(0);
   });
 });

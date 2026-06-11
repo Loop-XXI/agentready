@@ -2,12 +2,7 @@
 /**
  * agentready — audit any website for AI-agent readiness.
  *
- * Checks how discoverable, parseable, and usable a site is for AI agents:
- * llms.txt, robots.txt agent policy, structured data, OpenAPI, sitemaps,
- * feeds, metadata, and machine-readable surfaces.
- *
  * Zero dependencies. Node 18+.
- *
  * Usage:
  *   npx agentready example.com
  *   agentready example.com --json
@@ -17,9 +12,7 @@
 
 "use strict";
 
-const VERSION = "0.1.0";
-
-// ---------- tiny helpers ----------
+const { audit, VERSION } = require("../lib/checks.js");
 
 const C = {
   reset: "\x1b[0m", bold: "\x1b[1m", dim: "\x1b[2m",
@@ -28,406 +21,11 @@ const C = {
 const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
 const c = (code, s) => (useColor ? code + s + C.reset : s);
 
-const AGENT_UA = "agentready/" + VERSION + " (+https://github.com/Loop-XXI/agentready)";
-
-async function probe(url, opts = {}) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), opts.timeout || 10000);
-  try {
-    const res = await fetch(url, {
-      redirect: "follow",
-      signal: controller.signal,
-      headers: { "User-Agent": AGENT_UA, ...(opts.headers || {}) },
-      method: opts.method || "GET",
-    });
-    const text = opts.skipBody ? "" : await res.text();
-    return { ok: res.ok, status: res.status, text, headers: res.headers, url: res.url };
-  } catch (e) {
-    return { ok: false, status: 0, text: "", headers: new Map(), error: e.message };
-  } finally {
-    clearTimeout(timer);
-  }
+function gradeColor(letter) {
+  if (letter === "A" || letter === "B") return C.green;
+  if (letter === "C" || letter === "D") return C.yellow;
+  return C.red;
 }
-
-function normalizeOrigin(input) {
-  let u = input.trim();
-  if (!/^https?:\/\//i.test(u)) u = "https://" + u;
-  try {
-    return new URL(u).origin;
-  } catch {
-    return null;
-  }
-}
-
-// ---------- checks ----------
-// Each check: { id, label, weight, run(origin, ctx) -> { pass, detail, fix } }
-// ctx carries shared fetches (home page, robots) to avoid duplicate requests.
-
-const KNOWN_AI_BOTS = [
-  "GPTBot", "ClaudeBot", "Claude-Web", "anthropic-ai", "PerplexityBot",
-  "Google-Extended", "Applebot-Extended", "CCBot", "cohere-ai", "Bytespider",
-];
-
-const checks = [
-  {
-    id: "llms-txt",
-    label: "llms.txt",
-    weight: 20,
-    async run(origin) {
-      const r = await probe(origin + "/llms.txt");
-      const isText = r.ok && !/<\s*(!doctype|html)/i.test(r.text.slice(0, 200));
-      if (isText && r.text.trim().length > 0) {
-        const lines = r.text.trim().split("\n").length;
-        const hasLinks = /\[[^\]]+\]\([^)]+\)/.test(r.text) || /https?:\/\//.test(r.text);
-        return {
-          pass: true,
-          detail: `present (${lines} lines${hasLinks ? ", contains links" : ""})`,
-          ...( !hasLinks ? { partial: true, fix: "llms.txt exists but has no links — add markdown links to your key docs/pages." } : {}),
-        };
-      }
-      return {
-        pass: false,
-        detail: r.status ? `missing (HTTP ${r.status})` : "missing (unreachable)",
-        fix: "Add /llms.txt — a markdown index of your site for LLMs. Spec: llmstxt.org. This is the single highest-leverage file for agent discoverability.",
-      };
-    },
-  },
-  {
-    id: "llms-full",
-    label: "llms-full.txt",
-    weight: 5,
-    async run(origin) {
-      const r = await probe(origin + "/llms-full.txt");
-      const isText = r.ok && !/<\s*(!doctype|html)/i.test(r.text.slice(0, 200));
-      if (isText && r.text.trim().length > 0) {
-        const kb = Math.round(r.text.length / 1024);
-        return { pass: true, detail: `present (~${kb} KB)` };
-      }
-      return {
-        pass: false,
-        detail: "missing",
-        fix: "Optional: add /llms-full.txt with full flattened content so agents can ingest your whole site in one request.",
-      };
-    },
-  },
-  {
-    id: "robots",
-    label: "robots.txt",
-    weight: 10,
-    async run(origin, ctx) {
-      const r = await probe(origin + "/robots.txt");
-      ctx.robots = r.ok ? r.text : "";
-      if (!r.ok) {
-        return {
-          pass: false,
-          detail: `missing (HTTP ${r.status})`,
-          fix: "Add /robots.txt. Without it, agent crawlers guess — and some will skip you.",
-        };
-      }
-      const blockedAll = /User-agent:\s*\*\s*[\r\n]+(?:[^\S\r\n]*Disallow:\s*\/\s*$)/im.test(r.text);
-      if (blockedAll) {
-        return {
-          pass: false,
-          detail: "present but disallows everything for *",
-          fix: "robots.txt blocks all crawlers — agents respecting it cannot read your site at all.",
-        };
-      }
-      return { pass: true, detail: "present, crawlable" };
-    },
-  },
-  {
-    id: "ai-bot-policy",
-    label: "AI crawler policy",
-    weight: 5,
-    async run(origin, ctx) {
-      const robots = ctx.robots || "";
-      const mentioned = KNOWN_AI_BOTS.filter((b) => new RegExp("User-agent:\\s*" + b, "i").test(robots));
-      const blocked = mentioned.filter((b) => {
-        const re = new RegExp("User-agent:\\s*" + b + "[\\s\\S]*?Disallow:\\s*\\/\\s*(?=$|[\\r\\n])", "i");
-        return re.test(robots);
-      });
-      if (blocked.length > 0) {
-        return {
-          pass: false,
-          detail: `blocks AI agents: ${blocked.join(", ")}`,
-          fix: "You explicitly block AI crawlers. If you want agents to use your site, remove these Disallow rules (or keep them deliberately — but know agents can't see you).",
-        };
-      }
-      if (mentioned.length > 0) {
-        return { pass: true, detail: `explicit policy for ${mentioned.length} AI bot(s), none fully blocked` };
-      }
-      return { pass: true, detail: "no AI-specific blocks (default-open)" };
-    },
-  },
-  {
-    id: "sitemap",
-    label: "sitemap",
-    weight: 10,
-    async run(origin, ctx) {
-      // robots.txt declared sitemap?
-      const m = (ctx.robots || "").match(/Sitemap:\s*(\S+)/i);
-      const candidates = m ? [m[1]] : [origin + "/sitemap.xml"];
-      for (const u of candidates) {
-        const r = await probe(u);
-        if (r.ok && /<(urlset|sitemapindex)/i.test(r.text)) {
-          const count = (r.text.match(/<loc>/g) || []).length;
-          return { pass: true, detail: `present (${count} <loc> entries${m ? ", declared in robots.txt" : ""})` };
-        }
-      }
-      return {
-        pass: false,
-        detail: "missing",
-        fix: "Add /sitemap.xml and declare it in robots.txt — it's how agents enumerate your pages without guessing.",
-      };
-    },
-  },
-  {
-    id: "structured-data",
-    label: "structured data (JSON-LD)",
-    weight: 10,
-    async run(origin, ctx) {
-      const home = ctx.home;
-      if (!home || !home.ok) return { pass: false, detail: "home page unreachable", fix: "Site must serve a 200 home page." };
-      const blocks = home.text.match(/<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi) || [];
-      if (blocks.length === 0) {
-        return {
-          pass: false,
-          detail: "none found on home page",
-          fix: "Add JSON-LD (schema.org) — at minimum an Organization or WebSite block. Agents use it to extract facts without scraping prose.",
-        };
-      }
-      const types = [];
-      for (const b of blocks) {
-        try {
-          const json = JSON.parse(b.replace(/<script[^>]*>/i, "").replace(/<\/script>/i, ""));
-          const t = json["@type"] || (Array.isArray(json) && json[0] && json[0]["@type"]);
-          if (t) types.push(Array.isArray(t) ? t.join("+") : t);
-        } catch { /* unparseable block */ }
-      }
-      return { pass: true, detail: `${blocks.length} block(s)${types.length ? ": " + types.join(", ") : ""}` };
-    },
-  },
-  {
-    id: "meta",
-    label: "title + meta description",
-    weight: 10,
-    async run(origin, ctx) {
-      const home = ctx.home;
-      if (!home || !home.ok) return { pass: false, detail: "home page unreachable", fix: "Site must serve a 200 home page." };
-      const title = (home.text.match(/<title[^>]*>([^<]*)<\/title>/i) || [])[1];
-      const desc = (home.text.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i) ||
-                    home.text.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']description["']/i) || [])[1];
-      if (title && desc) return { pass: true, detail: `title "${title.trim().slice(0, 50)}", description present` };
-      const missing = [!title && "title", !desc && "meta description"].filter(Boolean).join(" + ");
-      return {
-        pass: false,
-        detail: `missing ${missing}`,
-        fix: `Add ${missing}. It's the first (sometimes only) thing an agent reads about a page.`,
-      };
-    },
-  },
-  {
-    id: "open-graph",
-    label: "Open Graph tags",
-    weight: 5,
-    async run(origin, ctx) {
-      const home = ctx.home;
-      if (!home || !home.ok) return { pass: false, detail: "home page unreachable" };
-      const og = (home.text.match(/property=["']og:[a-z:]+["']/gi) || []).length;
-      if (og >= 2) return { pass: true, detail: `${og} og: tags` };
-      return {
-        pass: false,
-        detail: og ? "only 1 og: tag" : "none",
-        fix: "Add og:title / og:description / og:url — agents and link unfurlers both read them.",
-      };
-    },
-  },
-  {
-    id: "openapi",
-    label: "API discoverability (OpenAPI)",
-    weight: 10,
-    async run(origin) {
-      const paths = ["/openapi.json", "/openapi.yaml", "/swagger.json", "/.well-known/openapi.json", "/api/openapi.json"];
-      for (const p of paths) {
-        const r = await probe(origin + p);
-        if (r.ok && (r.text.includes("openapi") || r.text.includes("swagger"))) {
-          return { pass: true, detail: `found at ${p}` };
-        }
-      }
-      return {
-        pass: false,
-        detail: "no OpenAPI spec found at common paths",
-        fix: "If you have an API, publish its OpenAPI spec at /openapi.json — agents can drive a documented API without custom integration. If you have no API, this is your biggest agent-readiness gap.",
-      };
-    },
-  },
-  {
-    id: "well-known",
-    label: ".well-known surface",
-    weight: 5,
-    async run(origin) {
-      const found = [];
-      for (const p of ["/.well-known/security.txt", "/.well-known/ai-plugin.json"]) {
-        const r = await probe(origin + p);
-        const isHtml = /<\s*(!doctype|html)/i.test(r.text.slice(0, 200));
-        if (r.ok && r.text.trim() && !isHtml) found.push(p.split("/").pop());
-      }
-      if (found.length) return { pass: true, detail: found.join(", ") };
-      return {
-        pass: false,
-        detail: "none",
-        fix: "Add /.well-known/security.txt (contact info, RFC 9116). Cheap trust signal for both humans and agents.",
-      };
-    },
-  },
-  {
-    id: "feed",
-    label: "RSS/Atom feed",
-    weight: 5,
-    async run(origin, ctx) {
-      const home = ctx.home;
-      const linked = home && home.ok &&
-        /<link[^>]+type=["']application\/(rss|atom)\+xml["']/i.test(home.text);
-      if (linked) return { pass: true, detail: "feed declared in <head>" };
-      for (const p of ["/feed", "/rss.xml", "/atom.xml", "/feed.xml", "/index.xml"]) {
-        const r = await probe(origin + p);
-        if (r.ok && /<(rss|feed)[\s>]/i.test(r.text)) return { pass: true, detail: `found at ${p}` };
-      }
-      return {
-        pass: false,
-        detail: "none found",
-        fix: "If you publish content, add an RSS/Atom feed — agents monitor feeds far more reliably than they re-scrape pages.",
-      };
-    },
-  },
-  {
-    id: "content-negotiation",
-    label: "markdown content negotiation",
-    weight: 5,
-    async run(origin) {
-      const r = await probe(origin + "/", { headers: { Accept: "text/markdown" } });
-      const ct = (r.headers && r.headers.get && r.headers.get("content-type")) || "";
-      if (r.ok && /markdown|text\/plain/.test(ct)) {
-        return { pass: true, detail: `serves ${ct.split(";")[0]} on request` };
-      }
-      return {
-        pass: false,
-        detail: "HTML only",
-        fix: "Optional (cutting-edge): respond to 'Accept: text/markdown' with markdown. Agents skip the HTML parse entirely.",
-      };
-    },
-  },
-  {
-    id: "perf",
-    label: "response speed",
-    weight: 5,
-    async run(origin, ctx) {
-      const t = ctx.homeMs;
-      if (t == null) return { pass: false, detail: "unmeasured" };
-      if (t < 1500) return { pass: true, detail: `${t} ms` };
-      return {
-        pass: false,
-        detail: `${t} ms (slow)`,
-        fix: "Home page took >1.5s. Agents run on timeouts; slow sites get dropped from agent workflows.",
-      };
-    },
-  },
-  {
-    id: "https",
-    label: "HTTPS",
-    weight: 5,
-    async run(origin, ctx) {
-      if (origin.startsWith("https://") && ctx.home && ctx.home.ok) return { pass: true, detail: "valid" };
-      return { pass: false, detail: "not serving valid HTTPS", fix: "Serve over HTTPS — most agent stacks refuse plain HTTP." };
-    },
-  },
-];
-
-// ---------- runner ----------
-
-function grade(score) {
-  if (score >= 90) return ["A", C.green];
-  if (score >= 75) return ["B", C.green];
-  if (score >= 60) return ["C", C.yellow];
-  if (score >= 40) return ["D", C.yellow];
-  return ["F", C.red];
-}
-
-async function audit(input, { json = false } = {}) {
-  const origin = normalizeOrigin(input);
-  if (!origin) {
-    console.error("agentready: invalid URL: " + input);
-    process.exit(2);
-  }
-
-  if (!json) {
-    console.log("");
-    console.log(c(C.bold, "  agentready ") + c(C.dim, "v" + VERSION) + "  →  " + c(C.cyan, origin));
-    console.log("");
-  }
-
-  // shared context: home page fetch (timed)
-  const ctx = {};
-  const t0 = Date.now();
-  ctx.home = await probe(origin + "/");
-  ctx.homeMs = Date.now() - t0;
-
-  if (ctx.home.status === 0) {
-    if (json) {
-      console.log(JSON.stringify({ origin, version: VERSION, error: "unreachable: " + (ctx.home.error || "network error") }));
-    } else {
-      console.error("  " + c(C.red, "unreachable") + " — " + (ctx.home.error || "network error"));
-      console.log("");
-    }
-    process.exit(2);
-  }
-
-  const results = [];
-  let earned = 0, total = 0;
-
-  for (const ch of checks) {
-    let r;
-    try {
-      r = await ch.run(origin, ctx);
-    } catch (e) {
-      r = { pass: false, detail: "check error: " + e.message };
-    }
-    const w = ch.weight;
-    total += w;
-    const pts = r.pass ? (r.partial ? Math.round(w / 2) : w) : 0;
-    earned += pts;
-    results.push({ id: ch.id, label: ch.label, weight: w, points: pts, ...r });
-    if (!json) {
-      const mark = r.pass ? (r.partial ? c(C.yellow, "◐") : c(C.green, "●")) : c(C.red, "○");
-      const pad = " ".repeat(Math.max(1, 30 - ch.label.length));
-      console.log("  " + mark + " " + ch.label + pad + c(C.dim, r.detail || ""));
-    }
-  }
-
-  const score = Math.round((earned / total) * 100);
-  const [letter, color] = grade(score);
-
-  if (json) {
-    console.log(JSON.stringify({ origin, version: VERSION, score, grade: letter, checks: results }, null, 2));
-    return score;
-  }
-
-  console.log("");
-  console.log("  " + c(C.bold, "score ") + c(color, c(C.bold, score + "/100  (" + letter + ")")));
-  console.log("");
-
-  const fixes = results.filter((r) => r.fix);
-  if (fixes.length) {
-    console.log(c(C.bold, "  to improve:"));
-    for (const f of fixes.slice(0, 6)) {
-      console.log(c(C.dim, "  · ") + f.fix);
-    }
-    console.log("");
-  }
-  return score;
-}
-
-// ---------- CLI ----------
 
 async function main() {
   const args = process.argv.slice(2);
@@ -438,6 +36,7 @@ async function main() {
     console.log(VERSION);
     return;
   }
+
   if (positional.length === 0 || args.includes("--help") || args.includes("-h")) {
     console.log(`
 agentready v${VERSION} — audit any website for AI-agent readiness
@@ -447,17 +46,56 @@ usage:
   agentready <url> --json     machine-readable output (agents welcome)
   agentready --version
 
-checks: llms.txt, robots.txt + AI crawler policy, sitemap, JSON-LD,
-meta/OG tags, OpenAPI discovery, .well-known, feeds, markdown
-content-negotiation, HTTPS, response speed.
+checks: llms.txt, llms-full.txt, robots.txt + AI crawler policy, sitemap,
+JSON-LD structured data, meta/OG tags, OpenAPI discovery, MCP manifest,
+.well-known surface, feeds, markdown content-negotiation, HTTPS, response speed.
 
 exit code: 0 if score >= 60, 1 otherwise (CI-friendly).
+
+(c) Loop XXI  https://loopxxi.com
 `);
     return;
   }
 
-  const score = await audit(positional[0], { json });
-  process.exit(score >= 60 ? 0 : 1);
+  const result = await audit(positional[0]);
+
+  if (json) {
+    console.log(JSON.stringify(result, null, 2));
+    process.exit(result.error ? 2 : result.score >= 60 ? 0 : 1);
+    return;
+  }
+
+  if (result.error) {
+    console.error("  " + c(C.red, result.error));
+    process.exit(2);
+    return;
+  }
+
+  console.log("");
+  console.log("  " + c(C.bold, "agentready ") + c(C.dim, "v" + VERSION) + "  →  " + c(C.cyan, result.origin));
+  console.log("");
+
+  for (const r of result.checks) {
+    const mark = r.pass ? (r.partial ? c(C.yellow, "◐") : c(C.green, "●")) : c(C.red, "○");
+    const pad = " ".repeat(Math.max(1, 32 - r.label.length));
+    console.log("  " + mark + " " + r.label + pad + c(C.dim, r.detail || ""));
+  }
+
+  const col = gradeColor(result.grade);
+  console.log("");
+  console.log("  " + c(C.bold, "score ") + c(col, c(C.bold, result.score + "/100  (" + result.grade + ")")));
+  console.log("");
+
+  const fixes = result.checks.filter((r) => r.fix);
+  if (fixes.length) {
+    console.log(c(C.bold, "  to improve:"));
+    for (const f of fixes.slice(0, 6)) {
+      console.log(c(C.dim, "  · ") + f.fix);
+    }
+    console.log("");
+  }
+
+  process.exit(result.score >= 60 ? 0 : 1);
 }
 
 main().catch((e) => {
