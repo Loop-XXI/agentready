@@ -6,8 +6,6 @@ const nextConfig = {
   experimental: {},
 };
 
-const nextConfig = nextConfig;
-
 module.exports = withSentryConfig(nextConfig, {
   // Sentry webpack plugin options
   org: "loop-xxi",
