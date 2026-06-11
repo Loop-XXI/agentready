@@ -48,7 +48,7 @@ No text outside the JSON.`;
         "X-Title": "agentready by Loop XXI",
       },
       body: JSON.stringify({
-        model: "anthropic/claude-haiku-4",
+        model: "anthropic/claude-haiku-4.5",
         max_tokens: 600,
         temperature: 0.3,
         messages: [
