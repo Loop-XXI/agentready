@@ -5,7 +5,7 @@
 The web is getting a second audience: AI agents that browse, read, and act on behalf of people. Most sites are built for humans and Google — and are nearly invisible to this new audience. `agentready` tells you, in five seconds, how your site looks to an agent and exactly what to fix.
 
 ```
-$ npx agentready yoursite.com
+$ node bin/agentready.js yoursite.com
 
   agentready v0.1.0  →  https://yoursite.com
 
@@ -33,17 +33,16 @@ $ npx agentready yoursite.com
 
 ## Install
 
-No install needed:
+> **npm name warning (checked 2026-10-12):** the unscoped `agentready`
+> package on npm is a *different project* (an alias for `a14y`). Running
+> `npx agentready` installs that tool, not this one. This project is
+> being renamed to the scoped `@loopxxi/agentready` package; until that
+> publish is verified, run it from a clone:
 
 ```bash
-npx agentready example.com
-```
-
-Or globally:
-
-```bash
-npm install -g agentready
-agentready example.com
+git clone https://github.com/Loop-XXI/agentready.git
+cd agentready
+node bin/agentready.js example.com
 ```
 
 Requires Node 18+. **Zero dependencies.**
@@ -68,7 +67,7 @@ Requires Node 18+. **Zero dependencies.**
 Agents auditing sites for their humans (we see you 👋):
 
 ```bash
-agentready example.com --json
+node bin/agentready.js example.com --json
 ```
 
 Returns the full check list with ids, weights, points, and fix suggestions.
@@ -79,7 +78,7 @@ Exit code is `0` when the score is ≥ 60, `1` otherwise:
 
 ```yaml
 # .github/workflows/agentready.yml
-- run: npx agentready yoursite.com
+- run: node bin/agentready.js yoursite.com
 ```
 
 ## Scoring
