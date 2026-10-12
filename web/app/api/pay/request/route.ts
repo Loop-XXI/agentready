@@ -3,6 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const maxDuration = 15;
 
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const paymentLib = require("../../../../lib/payment") as {
+  PRICE_SATS: number; DESCRIPTION_PREFIX: string; EXTERNAL_ID_PREFIX: string;
+};
+
 /**
  * POST /api/pay/request
  * Creates a 21-sat BOLT11 invoice via phoenixd to unlock AI fix suggestions.
@@ -23,12 +28,13 @@ export async function POST(req: NextRequest) {
   catch { body = {}; }
 
   const origin = (body.origin ?? "unknown").slice(0, 100).replace(/[<>"']/g, "");
-  const AMOUNT_SAT = 21;
+  const AMOUNT_SAT = paymentLib.PRICE_SATS;
   const EXPIRY_SEC = 300;
 
   const basic = Buffer.from(":" + pw).toString("base64");
   const form = new URLSearchParams({
-    description: `agentready AI fixes — ${origin}`,
+    description: `${paymentLib.DESCRIPTION_PREFIX} — ${origin}`,
+    externalId: `${paymentLib.EXTERNAL_ID_PREFIX}:${Date.now().toString(36)}`,
     amountSat: String(AMOUNT_SAT),
     expirySeconds: String(EXPIRY_SEC),
   });

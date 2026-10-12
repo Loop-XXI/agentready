@@ -3,58 +3,35 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const maxDuration = 15;
 
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const paymentLib = require("../../../../lib/payment") as {
+  verifyAgentReadyPayment: (hash: string) => Promise<{ configured: boolean; paid: boolean; data: { completedAt?: number } | null }>;
+  issueEntitlement: (hash: string) => string;
+};
+
 /**
  * GET /api/pay/check?paymentHash=<64-hex>
- * Checks if a phoenixd BOLT11 invoice has been paid.
- * Returns: { paid: boolean, settledAt?: number }
+ * Verifies a 21-sat agentready invoice against phoenixd (amount, description,
+ * and product binding are checked in lib/payment). On success it also returns
+ * a short-lived one-time entitlement for /api/ai-fixes. A paymentHash alone
+ * is never an entitlement.
  */
 export async function GET(req: NextRequest) {
-  const pwKey = ["PHOENIXD", "PASSWORD"].join("_");
-  const pw = process.env[pwKey] ?? "";
-  const url = process.env.PHOENIXD_URL ?? "";
-
-  if (!url || !pw) {
-    return NextResponse.json({ error: "Lightning not configured" }, { status: 503 });
-  }
-
   const paymentHash = req.nextUrl.searchParams.get("paymentHash") ?? "";
-
-  // Strict 64-hex validation — prevent path traversal
   if (!/^[0-9a-fA-F]{64}$/.test(paymentHash)) {
     return NextResponse.json({ error: "Invalid paymentHash" }, { status: 400 });
   }
-
-  const basic = Buffer.from(":" + pw).toString("base64");
-
   try {
-    const res = await fetch(`${url}/payments/incoming/${paymentHash}`, {
-      headers: { Authorization: "Basic " + basic },
-      signal: AbortSignal.timeout(8000),
-    });
-
-    if (!res.ok) {
-      return NextResponse.json({ paid: false }, { headers: { "Cache-Control": "no-store" } });
+    const { configured, paid, data } = await paymentLib.verifyAgentReadyPayment(paymentHash);
+    if (!configured) {
+      return NextResponse.json({ error: "Lightning not configured" }, { status: 503 });
     }
-
-    const data = await res.json() as {
-      status?: string;
-      isPaid?: boolean;
-      completedAt?: number;
-      createdAt?: number;
-    };
-
-    // phoenixd v0.7.x: status = "pending" | "succeeded" | "failed"
-    const paid = data.status === "succeeded" || data.isPaid === true;
-    const settledAt = data.completedAt ?? (paid ? Date.now() : undefined);
-
+    const entitlement = paid ? paymentLib.issueEntitlement(paymentHash) : "";
     return NextResponse.json(
-      { paid, settledAt },
+      { paid, entitlement: entitlement || undefined, settledAt: paid ? (data?.completedAt ?? Date.now()) : undefined },
       { headers: { "Cache-Control": "no-store" } }
     );
-  } catch (e: unknown) {
-    return NextResponse.json(
-      { paid: false, error: e instanceof Error ? e.message : "check failed" },
-      { headers: { "Cache-Control": "no-store" } }
-    );
+  } catch {
+    return NextResponse.json({ paid: false }, { headers: { "Cache-Control": "no-store" } });
   }
 }

@@ -5,14 +5,21 @@ export const maxDuration = 30;
 
 type FailedCheck = { id: string; label: string; weight: number; detail?: string; fix?: string };
 
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const paymentLib = require("../../../lib/payment") as {
+  verifyAgentReadyPayment: (hash: string) => Promise<{ configured: boolean; paid: boolean }>;
+  verifyEntitlement: (token: string) => { ph: string; n: string; exp: number } | null;
+  consumeEntitlement: (payload: { ph: string; n: string; exp: number }) => boolean;
+};
+
 /**
  * POST /api/ai-fixes
- * Requires proof of Lightning payment: paymentHash query param that phoenixd confirms as settled.
+ * Requires a one-time entitlement from /api/pay/check, bound to a phoenixd payment that this route re-verifies (21 sats, agentready invoice) before spending on the AI provider.
  * Free tier: returns baked-in fix hints.
  * Paid (21 sats): returns Claude AI-generated, site-specific fixes.
  */
 export async function POST(req: NextRequest) {
-  let body: { origin?: string; score?: number; grade?: string; failed?: FailedCheck[]; paymentHash?: string };
+  let body: { origin?: string; score?: number; grade?: string; failed?: FailedCheck[]; entitlement?: string };
   try { body = await req.json(); }
   catch { return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 }); }
 
@@ -25,26 +32,18 @@ export async function POST(req: NextRequest) {
   const apiKey = process.env[orKey] ?? "";
 
   // --- Payment gate ---
-  const paymentHash = (body.paymentHash ?? "").trim();
+  // Paid tier requires a server-issued, one-time entitlement (see
+  // /api/pay/check) bound to a verified 21-sat agentready payment.
+  // A raw paymentHash is public invoice data and is never accepted here.
   let paid = false;
-
-  if (paymentHash && /^[0-9a-fA-F]{64}$/.test(paymentHash)) {
-    const pwKey = ["PHOENIXD", "PASSWORD"].join("_");
-    const pw = process.env[pwKey] ?? "";
-    const phoenixdUrl = process.env.PHOENIXD_URL ?? "";
-
-    if (pw && phoenixdUrl) {
-      try {
-        const basic = Buffer.from(":" + pw).toString("base64");
-        const res = await fetch(`${phoenixdUrl}/payments/incoming/${paymentHash}`, {
-          headers: { Authorization: "Basic " + basic },
-          signal: AbortSignal.timeout(8000),
-        });
-        if (res.ok) {
-          const data = await res.json() as { status?: string; isPaid?: boolean };
-          paid = data.status === "succeeded" || data.isPaid === true;
-        }
-      } catch { /* treat as unpaid */ }
+  const entitlementToken = (body.entitlement ?? "").trim();
+  if (entitlementToken) {
+    const payload = paymentLib.verifyEntitlement(entitlementToken);
+    if (payload) {
+      const verified = await paymentLib.verifyAgentReadyPayment(payload.ph).catch(() => null);
+      if (verified?.paid && paymentLib.consumeEntitlement(payload)) {
+        paid = true;
+      }
     }
   }
 

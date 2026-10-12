@@ -57,7 +57,7 @@ function CopyButton({ text }: { text: string }) {
 
 function PaymentModal({
   origin, onPaid, onClose,
-}: { origin: string; onPaid: (hash: string) => void; onClose: () => void }) {
+}: { origin: string; onPaid: (entitlement: string) => void; onClose: () => void }) {
   const [payState, setPayState] = useState<PayState>("requesting");
   const [invoice, setInvoice] = useState("");
   const [paymentHash, setPaymentHash] = useState("");
@@ -92,11 +92,12 @@ function PaymentModal({
       if (!hash) return;
       try {
         const r = await fetch(`/api/pay/check?paymentHash=${hash}`);
-        const d = await r.json() as { paid?: boolean };
-        if (d.paid) {
+        const d = await r.json() as { paid?: boolean; entitlement?: string };
+        if (d.paid && d.entitlement) {
           clearInterval(pollRef.current!);
           setPayState("paid");
-          setTimeout(() => onPaid(hash), 800);
+          const entitlement = d.entitlement;
+          setTimeout(() => onPaid(entitlement), 800);
         }
       } catch { /* keep polling */ }
     }, 2000);
@@ -196,7 +197,7 @@ export default function Home() {
     finally { setLoading(false); }
   }
 
-  async function fetchAiFixes(paymentHash?: string) {
+  async function fetchAiFixes(entitlement?: string) {
     if (!result) return;
     setAiLoading(true);
     setShowPayModal(false);
@@ -210,7 +211,7 @@ export default function Home() {
           score: result.score,
           grade: result.grade,
           failed,
-          paymentHash: paymentHash ?? "",
+          entitlement: entitlement ?? "",
         }),
       });
       const data = await res.json() as { fixes?: Record<string, string>; paid?: boolean; tier?: string };
@@ -392,7 +393,7 @@ export default function Home() {
       {showPayModal && result && (
         <PaymentModal
           origin={result.origin}
-          onPaid={(hash) => fetchAiFixes(hash)}
+          onPaid={(entitlement) => fetchAiFixes(entitlement)}
           onClose={() => setShowPayModal(false)}
         />
       )}
