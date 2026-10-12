@@ -42,6 +42,11 @@ assert.equal(isPaidAgentReadyPayment({ ...good, description: undefined }), false
 assert.equal(isPaidAgentReadyPayment(null), false);
 assert.equal(isPaidAgentReadyPayment({}), false);
 
+// Realistic phoenixd shape: externalId is not always echoed; description-only binding must still pass
+const { externalId: _omit, ...noExternalId } = good;
+assert.equal(isPaidAgentReadyPayment(noExternalId), true, "description-bound payment without externalId should pass");
+assert.equal(isPaidAgentReadyPayment({ ...noExternalId, externalId: "" }), true, "empty externalId should be treated as absent");
+
 // Entitlement: issue, verify, tamper, expire, consume-once
 const token = issueEntitlement(HASH, 1_000_000);
 assert.ok(token, "entitlement should be issued when a secret is configured");
@@ -70,6 +75,18 @@ assert.equal(consumeEntitlement(payload, 1_000_201), false, "second use of same 
   const mockForeign = async () => ({ ok: true, json: async () => ({ ...good, receivedSat: 1000, requestedSat: 1000, description: "someone else" }) });
   const foreign = await verifyAgentReadyPayment(HASH, mockForeign);
   assert.equal(foreign.paid, false, "mock foreign 1000-sat payment must not unlock agentready");
+
+  const badHash = await verifyAgentReadyPayment("not-hex", mockPaid);
+  assert.equal(badHash.paid, false, "non-hex paymentHash must fail without unlocking");
+
+  const expiring = issueEntitlement(HASH, 2_000_000);
+  assert.equal(verifyEntitlement(expiring, 2_000_000 + 5 * 60 * 1000), null, "entitlement at its expiry instant must fail");
+
+  _consumedNonces.clear();
+  const first = verifyEntitlement(issueEntitlement(HASH, 3_000_000), 3_000_100);
+  const second = verifyEntitlement(issueEntitlement(HASH, 3_000_000), 3_000_100);
+  assert.equal(consumeEntitlement(first, 3_000_200), true);
+  assert.equal(consumeEntitlement(second, 3_000_200), true, "a fresh entitlement for a new paid request remains usable");
 
   const mockMissing = async () => ({ ok: false, json: async () => ({}) });
   const missing = await verifyAgentReadyPayment(HASH, mockMissing);

@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
   // /api/pay/check) bound to a verified 21-sat agentready payment.
   // A raw paymentHash is public invoice data and is never accepted here.
   let paid = false;
-  const entitlementToken = (body.entitlement ?? "").trim();
+  const entitlementToken = typeof body.entitlement === "string" ? body.entitlement.trim() : "";
   if (entitlementToken) {
     const payload = paymentLib.verifyEntitlement(entitlementToken);
     if (payload) {

@@ -27,6 +27,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Lightning not configured" }, { status: 503 });
     }
     const entitlement = paid ? paymentLib.issueEntitlement(paymentHash) : "";
+    if (paid && !entitlement) {
+      return NextResponse.json({ error: "Entitlement not configured" }, { status: 503 });
+    }
     return NextResponse.json(
       { paid, entitlement: entitlement || undefined, settledAt: paid ? (data?.completedAt ?? Date.now()) : undefined },
       { headers: { "Cache-Control": "no-store" } }
