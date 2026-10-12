@@ -7,9 +7,7 @@ type FailedCheck = { id: string; label: string; weight: number; detail?: string;
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const paymentLib = require("../../../lib/payment") as {
-  verifyAgentReadyPayment: (hash: string) => Promise<{ configured: boolean; paid: boolean }>;
-  verifyEntitlement: (token: string) => { ph: string; n: string; exp: number } | null;
-  consumeEntitlement: (payload: { ph: string; n: string; exp: number }) => boolean;
+  authorizePaidTier: (token: string) => Promise<{ paid: boolean; reason: string }>;
 };
 
 /**
@@ -35,17 +33,11 @@ export async function POST(req: NextRequest) {
   // Paid tier requires a server-issued, one-time entitlement (see
   // /api/pay/check) bound to a verified 21-sat agentready payment.
   // A raw paymentHash is public invoice data and is never accepted here.
-  let paid = false;
-  const entitlementToken = typeof body.entitlement === "string" ? body.entitlement.trim() : "";
-  if (entitlementToken) {
-    const payload = paymentLib.verifyEntitlement(entitlementToken);
-    if (payload) {
-      const verified = await paymentLib.verifyAgentReadyPayment(payload.ph).catch(() => null);
-      if (verified?.paid && paymentLib.consumeEntitlement(payload)) {
-        paid = true;
-      }
-    }
-  }
+  const entitlementToken = typeof body.entitlement === "string" ? body.entitlement : "";
+  const authorization = await paymentLib.authorizePaidTier(entitlementToken).catch(
+    () => ({ paid: false, reason: "verification_failed" })
+  );
+  const paid = authorization.paid;
 
   // Free fallback — return baked-in hints
   if (!paid || !apiKey) {

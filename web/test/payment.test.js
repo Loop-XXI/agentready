@@ -16,6 +16,7 @@ const {
   verifyEntitlement,
   consumeEntitlement,
   verifyAgentReadyPayment,
+  authorizePaidTier,
   _consumedNonces,
 } = require("../lib/payment.js");
 
@@ -91,6 +92,32 @@ assert.equal(consumeEntitlement(payload, 1_000_201), false, "second use of same 
   const mockMissing = async () => ({ ok: false, json: async () => ({}) });
   const missing = await verifyAgentReadyPayment(HASH, mockMissing);
   assert.equal(missing.paid, false, "unknown paymentHash must fail");
+
+  // Full gate, exactly as /api/ai-fixes calls it (authorizePaidTier)
+  _consumedNonces.clear();
+  const gateToken = issueEntitlement(HASH, 4_000_000);
+  const gateOk = await authorizePaidTier(gateToken, mockPaid, 4_000_100);
+  assert.equal(gateOk.paid, true, "valid entitlement + verified payment should authorize");
+  const gateReplay = await authorizePaidTier(gateToken, mockPaid, 4_000_101);
+  assert.equal(gateReplay.paid, false, "replayed entitlement must not authorize twice");
+  assert.equal(gateReplay.reason, "entitlement_reused");
+
+  const foreignToken = issueEntitlement(HASH, 4_100_000);
+  const gateForeign = await authorizePaidTier(foreignToken, mockForeign, 4_100_100);
+  assert.equal(gateForeign.paid, false, "foreign payment must not authorize");
+  const gateRetried = await authorizePaidTier(foreignToken, mockPaid, 4_100_101);
+  assert.equal(gateRetried.paid, true, "failed payment verification must not burn the entitlement");
+
+  assert.equal((await authorizePaidTier(HASH, mockPaid, 4_200_000)).paid, false, "raw paymentHash must not authorize");
+  assert.equal((await authorizePaidTier("", mockPaid, 4_200_000)).paid, false);
+  assert.equal((await authorizePaidTier(undefined, mockPaid, 4_200_000)).paid, false);
+
+  // Route wiring guard: the API route must delegate to authorizePaidTier and
+  // must not accept a paymentHash field as proof.
+  const fs = require("node:fs");
+  const routeSrc = fs.readFileSync(require("node:path").join(__dirname, "..", "app", "api", "ai-fixes", "route.ts"), "utf8");
+  assert.ok(routeSrc.includes("authorizePaidTier"), "ai-fixes route must call authorizePaidTier");
+  assert.ok(!/body\.paymentHash/.test(routeSrc), "ai-fixes route must not read body.paymentHash");
 
   console.log("OK — payment tests passed (amount, description, replay, tamper, expiry controls)");
 })().catch((err) => { console.error(err); process.exit(1); });

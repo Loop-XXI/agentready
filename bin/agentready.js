@@ -4,8 +4,8 @@
  *
  * Zero dependencies. Node 18+.
  * Usage:
- *   npx agentready example.com
- *   agentready example.com --json
+ *   node bin/agentready.js example.com
+ *   node bin/agentready.js example.com --json
  *
  * (c) Loop XXI — MIT License
  */

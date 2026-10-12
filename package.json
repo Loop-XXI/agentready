@@ -1,8 +1,17 @@
 {
-  "name": "agentready",
+  "name": "@loopxxi/agentready",
   "version": "0.1.0",
-  "description": "Audit any website for AI-agent readiness — llms.txt, robots policy, structured data, OpenAPI, and more. Zero dependencies.",
-  "keywords": ["llms.txt", "ai-agents", "seo", "audit", "cli", "robots.txt", "structured-data", "openapi"],
+  "description": "Audit any website for AI-agent readiness \u2014 llms.txt, robots policy, structured data, OpenAPI, and more. Zero dependencies.",
+  "keywords": [
+    "llms.txt",
+    "ai-agents",
+    "seo",
+    "audit",
+    "cli",
+    "robots.txt",
+    "structured-data",
+    "openapi"
+  ],
   "license": "MIT",
   "author": "Loop XXI (https://loopxxi.com)",
   "homepage": "https://github.com/Loop-XXI/agentready#readme",
@@ -14,11 +23,17 @@
   "bin": {
     "agentready": "bin/agentready.js"
   },
-  "files": ["bin/"],
+  "files": [
+    "bin/",
+    "lib/"
+  ],
   "engines": {
     "node": ">=18"
   },
   "scripts": {
     "test": "node test/run.js"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

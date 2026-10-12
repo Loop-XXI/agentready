@@ -130,6 +130,25 @@ function consumeEntitlement(payload, now = Date.now()) {
   return true;
 }
 
+/**
+ * Full paid-tier authorization for one request. This is the exact function
+ * /api/ai-fixes calls, so tests exercise the real gate, not a copy of it:
+ * valid entitlement -> payment re-verified against phoenixd -> one-time
+ * consumption. Failed payment verification never burns the entitlement.
+ */
+async function authorizePaidTier(entitlementToken, fetchImpl, now = Date.now()) {
+  if (typeof entitlementToken !== "string" || !entitlementToken.trim()) {
+    return { paid: false, reason: "missing_entitlement" };
+  }
+  const payload = verifyEntitlement(entitlementToken.trim(), now);
+  if (!payload) return { paid: false, reason: "invalid_entitlement" };
+  const verified = await verifyAgentReadyPayment(payload.ph, fetchImpl);
+  if (!verified.configured) return { paid: false, reason: "payments_not_configured" };
+  if (!verified.paid) return { paid: false, reason: "payment_not_verified" };
+  if (!consumeEntitlement(payload, now)) return { paid: false, reason: "entitlement_reused" };
+  return { paid: true, reason: "ok" };
+}
+
 module.exports = {
   PRICE_SATS,
   DESCRIPTION_PREFIX,
@@ -141,5 +160,6 @@ module.exports = {
   issueEntitlement,
   verifyEntitlement,
   consumeEntitlement,
+  authorizePaidTier,
   _consumedNonces: consumedNonces,
 };
