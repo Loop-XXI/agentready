@@ -92,7 +92,13 @@ function PaymentModal({
       if (!hash) return;
       try {
         const r = await fetch(`/api/pay/check?paymentHash=${hash}`);
-        const d = await r.json() as { paid?: boolean; entitlement?: string };
+        const d = await r.json() as { paid?: boolean; entitlement?: string; error?: string };
+        if (!r.ok && d.error) {
+          clearInterval(pollRef.current!);
+          setError(d.error);
+          setPayState("error");
+          return;
+        }
         if (d.paid && d.entitlement) {
           clearInterval(pollRef.current!);
           setPayState("paid");
