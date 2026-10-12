@@ -5,18 +5,17 @@ Canonical company entry: AGENT START HERE (Notion). This repo is the
 
 - Deploy target: Vercel project `agentready` in the Loop XXI team,
   root directory `web`, custom domain `agentready.loopxxi.com`.
-  Deployed 2026-10-12 from merged main (PR 1, merge 9f53ac5).
-  Production env vars were set later on 2026-10-12 (PHOENIXD_URL,
-  PHOENIXD_PASSWORD, OPENROUTER_API_KEY, AGENTREADY_ENTITLEMENT_SECRET)
-  and the project was redeployed. Live checks after that: home 200,
-  /api/audit works, /api/pay/request creates a 21-sat invoice (200),
-  an unpaid invoice checks paid:false, and raw-hash, garbage, and
-  forged entitlements to /api/ai-fixes return the free tier.
-  Still outstanding: one real paid 21-sat call on the live URL (the
-  company Alby wallet showed 0 sats, and phoenixd cannot pay its own
-  invoice), after which the same entitlement must fail on replay.
-  Wrong-amount and foreign-payment controls are covered by unit tests
-  with mock phoenixd responses, not yet by a live paid payment.
+  Deployed 2026-10-12 from merged main (PR 1, merge 9f53ac5), with
+  Production env vars set the same day and a redeploy.
+  Live verification 2026-10-12: home 200, /api/audit works,
+  /api/pay/request creates a 21-sat invoice, unpaid checks paid:false,
+  and raw-hash, garbage, and forged entitlements return the free tier.
+  A SELF-PAY test then paid the 21-sat invoice from the company
+  phoenixd node: check issued an entitlement, /api/ai-fixes returned
+  tier ai, and replaying that entitlement returned the free tier.
+  Paid 1-sat (agentready description) and paid 21-sat (foreign
+  description) control invoices both check paid:false live.
+  Self-pay is a test, not revenue. External revenue: NOT FOUND.
 - Tests: `node test/run.js` (CLI) and `node web/test/payment.test.js`
   (payment verification + entitlement unit tests, mocks only).
   `web`: `npm run build` before any deploy.
