@@ -57,7 +57,7 @@ function CopyButton({ text }: { text: string }) {
 
 function PaymentModal({
   origin, onPaid, onClose,
-}: { origin: string; onPaid: (entitlement: string) => void; onClose: () => void }) {
+}: { origin: string; onPaid: (entitlement: string, paymentHash: string) => void; onClose: () => void }) {
   const [payState, setPayState] = useState<PayState>("requesting");
   const [invoice, setInvoice] = useState("");
   const [paymentHash, setPaymentHash] = useState("");
@@ -103,7 +103,7 @@ function PaymentModal({
           clearInterval(pollRef.current!);
           setPayState("paid");
           const entitlement = d.entitlement;
-          setTimeout(() => onPaid(entitlement), 800);
+          setTimeout(() => onPaid(entitlement, hash), 800);
         }
       } catch { /* keep polling */ }
     }, 2000);
@@ -189,7 +189,8 @@ export default function Home() {
   async function runAudit(e: React.FormEvent) {
     e.preventDefault();
     if (!url.trim()) return;
-    setLoading(true); setError(null); setResult(null);
+    setLoading(true);
+    setAiError(""); setRetryPaymentHash(""); setCanRetryFixes(false); setError(null); setResult(null);
     try {
       const res = await fetch("/api/audit", {
         method: "POST",
@@ -203,9 +204,16 @@ export default function Home() {
     finally { setLoading(false); }
   }
 
-  async function fetchAiFixes(entitlement?: string) {
+  const [aiError, setAiError] = useState("");
+  const [retryPaymentHash, setRetryPaymentHash] = useState("");
+  const [canRetryFixes, setCanRetryFixes] = useState(false);
+
+  async function fetchAiFixes(entitlement?: string, hash?: string) {
     if (!result) return;
     setAiLoading(true);
+    setAiError("");
+    setCanRetryFixes(false);
+    if (hash) setRetryPaymentHash(hash);
     setShowPayModal(false);
     try {
       const failed = result.checks.filter((c) => !c.pass || c.partial);
@@ -220,13 +228,28 @@ export default function Home() {
           entitlement: entitlement ?? "",
         }),
       });
-      const data = await res.json() as { fixes?: Record<string, string>; paid?: boolean; tier?: string };
+      const data = await res.json() as { fixes?: Record<string, string>; paid?: boolean; tier?: string; status?: string; retryable?: boolean };
+      if (!res.ok) {
+        setAiError(data.retryable ? "AI fixes are temporarily unavailable. Retry this purchase without paying again." : "Delivery is pending review. Do not pay again. Contact business@loopxxi.com for help.");
+        setCanRetryFixes(Boolean(data.retryable || data.status === "pending"));
+        return;
+      }
       setResult((prev) => prev
         ? { ...prev, aiFixes: data.fixes, aiTier: data.tier }
         : prev
       );
-    } catch { /* non-critical */ }
+    } catch { setAiError("Delivery could not be confirmed. Retry the same purchase without paying again."); setCanRetryFixes(true); }
     finally { setAiLoading(false); }
+  }
+
+  async function retryAiFixes() {
+    if (!retryPaymentHash) return;
+    try {
+      const r = await fetch('/api/pay/check?paymentHash=' + retryPaymentHash);
+      const d = await r.json() as {entitlement?: string};
+      if (!r.ok || !d.entitlement) { setAiError("Purchase verification unavailable. Do not pay again."); return; }
+      await fetchAiFixes(d.entitlement, retryPaymentHash);
+    } catch { setAiError("Purchase verification unavailable. Do not pay again."); }
   }
 
   const failed = result?.checks.filter((c) => !c.pass || c.partial) ?? [];
@@ -389,6 +412,11 @@ export default function Home() {
         </section>
       )}
 
+      {aiError && <section role="alert" className={styles.formSection}>
+        <p className={styles.errorMsg}>{aiError}</p>
+        {canRetryFixes && retryPaymentHash && <button disabled={aiLoading} onClick={retryAiFixes} className={styles.copyBtn}>Retry same purchase</button>}
+      </section>}
+
       {/* Footer */}
       <footer className={styles.footer}>
         <span>agentready by <a href="https://loopxxi.com" className={styles.footerLink}>Loop XXI</a> — technology that compounds.</span>
@@ -399,7 +427,7 @@ export default function Home() {
       {showPayModal && result && (
         <PaymentModal
           origin={result.origin}
-          onPaid={(entitlement) => fetchAiFixes(entitlement)}
+          onPaid={(entitlement, hash) => fetchAiFixes(entitlement, hash)}
           onClose={() => setShowPayModal(false)}
         />
       )}

@@ -16,3 +16,11 @@ and OpenRouter (paid AI fixes). Both are called over plain HTTPS with
 server-side credentials from the deployment environment; either can be
 disabled by removing its env vars, which degrades the web app to the
 free audit + free hints instead of failing.
+
+Shared fulfillment persistence uses existing Supabase/Postgres over plain
+server-side HTTPS RPC. No Supabase SDK or new runtime package is required.
+Exit: export the redemption table and SQL functions to any Postgres host;
+replace only the REST adapter. Never discard spent rows during an exit.
+The optional SQL regression harness uses @electric-sql/pglite (Apache-2.0),
+installed in scratch space only. It is PostgreSQL WASM, not production proof.
+Exit: run the same SQL contract cases against any disposable Postgres.

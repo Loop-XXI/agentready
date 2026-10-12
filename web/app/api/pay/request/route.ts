@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
-export const maxDuration = 15;
+export const maxDuration = 20;
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const { createRedemptionStore } = require("../../../../lib/redemption");
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const paymentLib = require("../../../../lib/payment") as {
@@ -23,17 +25,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Lightning not configured" }, { status: 503 });
   }
 
+  try {
+    if (!process.env.OPENROUTER_API_KEY || !await createRedemptionStore().ready()) throw new Error();
+  } catch { return NextResponse.json({error:"Paid fixes temporarily unavailable"},{status:503}); }
+
   let body: { origin?: string };
   try { body = await req.json(); }
   catch { body = {}; }
 
-  const origin = (body.origin ?? "unknown").slice(0, 100).replace(/[<>"']/g, "");
+  const origin = (typeof body.origin === "string" ? body.origin : "unknown").slice(0, 100).replace(/[<>"']/g, "");
   const AMOUNT_SAT = paymentLib.PRICE_SATS;
   const EXPIRY_SEC = 300;
 
   const basic = Buffer.from(":" + pw).toString("base64");
   const form = new URLSearchParams({
-    description: `${paymentLib.DESCRIPTION_PREFIX} — ${origin}`,
+    description: `${paymentLib.DESCRIPTION_PREFIX} - ${origin}`,
     externalId: `${paymentLib.EXTERNAL_ID_PREFIX}:${Date.now().toString(36)}`,
     amountSat: String(AMOUNT_SAT),
     expirySeconds: String(EXPIRY_SEC),
@@ -52,7 +58,7 @@ export async function POST(req: NextRequest) {
 
     const text = await res.text();
     if (!res.ok) {
-      return NextResponse.json({ error: `phoenixd error: ${text.slice(0, 100)}` }, { status: 502 });
+      return NextResponse.json({ error: "Invoice creation unavailable" }, { status: 502 });
     }
 
     // phoenixd may return JSON object or plain invoice string
@@ -76,7 +82,7 @@ export async function POST(req: NextRequest) {
     );
   } catch (e: unknown) {
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : "failed to create invoice" },
+      { error: "Invoice creation unavailable" },
       { status: 500 }
     );
   }

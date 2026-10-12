@@ -13,7 +13,7 @@ const paymentLib = require("../../../../lib/payment") as {
  * GET /api/pay/check?paymentHash=<64-hex>
  * Verifies a 21-sat agentready invoice against phoenixd (amount, description,
  * and product binding are checked in lib/payment). On success it also returns
- * a short-lived one-time entitlement for /api/ai-fixes. A paymentHash alone
+ * a short-lived verification entitlement for /api/ai-fixes. A paymentHash alone
  * is never an entitlement.
  */
 export async function GET(req: NextRequest) {

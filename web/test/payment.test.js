@@ -14,10 +14,8 @@ const {
   isPaidAgentReadyPayment,
   issueEntitlement,
   verifyEntitlement,
-  consumeEntitlement,
   verifyAgentReadyPayment,
   authorizePaidTier,
-  _consumedNonces,
 } = require("../lib/payment.js");
 
 const HASH = "a".repeat(64);
@@ -48,7 +46,11 @@ const { externalId: _omit, ...noExternalId } = good;
 assert.equal(isPaidAgentReadyPayment(noExternalId), true, "description-bound payment without externalId should pass");
 assert.equal(isPaidAgentReadyPayment({ ...noExternalId, externalId: "" }), true, "empty externalId should be treated as absent");
 
-// Entitlement: issue, verify, tamper, expire, consume-once
+assert.equal(isPaidAgentReadyPayment({ ...good, requestedSat:undefined, amountSat:undefined }), false, "missing requested amount must fail");
+assert.equal(isPaidAgentReadyPayment({ ...good, description: "agentready AI fixes-copy" }), false, "prefix decoy must fail");
+assert.equal(isPaidAgentReadyPayment({ ...good, externalId: "agentready-v10:decoy" }), false, "externalId prefix decoy must fail");
+
+// Entitlement: issue, verify, tamper, expire; shared store owns consumption
 const token = issueEntitlement(HASH, 1_000_000);
 assert.ok(token, "entitlement should be issued when a secret is configured");
 const payload = verifyEntitlement(token, 1_000_100);
@@ -62,10 +64,6 @@ assert.equal(verifyEntitlement(HASH, 1_000_100), null, "a raw paymentHash is not
 assert.equal(verifyEntitlement(token, 1_000_000 + 6 * 60 * 1000), null, "expired entitlement must fail");
 assert.equal(verifyEntitlement("", 1_000_100), null);
 assert.equal(issueEntitlement("not-a-hash"), "", "no entitlement for malformed hash");
-
-_consumedNonces.clear();
-assert.equal(consumeEntitlement(payload, 1_000_200), true, "first use should consume");
-assert.equal(consumeEntitlement(payload, 1_000_201), false, "second use of same entitlement must fail");
 
 // Network-shaped verification with an injected fetch (mock, not live phoenixd)
 (async () => {
@@ -83,24 +81,16 @@ assert.equal(consumeEntitlement(payload, 1_000_201), false, "second use of same 
   const expiring = issueEntitlement(HASH, 2_000_000);
   assert.equal(verifyEntitlement(expiring, 2_000_000 + 5 * 60 * 1000), null, "entitlement at its expiry instant must fail");
 
-  _consumedNonces.clear();
-  const first = verifyEntitlement(issueEntitlement(HASH, 3_000_000), 3_000_100);
-  const second = verifyEntitlement(issueEntitlement(HASH, 3_000_000), 3_000_100);
-  assert.equal(consumeEntitlement(first, 3_000_200), true);
-  assert.equal(consumeEntitlement(second, 3_000_200), true, "a fresh entitlement for a new paid request remains usable");
-
   const mockMissing = async () => ({ ok: false, json: async () => ({}) });
   const missing = await verifyAgentReadyPayment(HASH, mockMissing);
   assert.equal(missing.paid, false, "unknown paymentHash must fail");
 
   // Full gate, exactly as /api/ai-fixes calls it (authorizePaidTier)
-  _consumedNonces.clear();
   const gateToken = issueEntitlement(HASH, 4_000_000);
   const gateOk = await authorizePaidTier(gateToken, mockPaid, 4_000_100);
   assert.equal(gateOk.paid, true, "valid entitlement + verified payment should authorize");
   const gateReplay = await authorizePaidTier(gateToken, mockPaid, 4_000_101);
-  assert.equal(gateReplay.paid, false, "replayed entitlement must not authorize twice");
-  assert.equal(gateReplay.reason, "entitlement_reused");
+  assert.equal(gateReplay.paymentHash, HASH, "verification yields stable logical purchase key; shared store consumes it");
 
   const foreignToken = issueEntitlement(HASH, 4_100_000);
   const gateForeign = await authorizePaidTier(foreignToken, mockForeign, 4_100_100);
@@ -116,8 +106,8 @@ assert.equal(consumeEntitlement(payload, 1_000_201), false, "second use of same 
   // must not accept a paymentHash field as proof.
   const fs = require("node:fs");
   const routeSrc = fs.readFileSync(require("node:path").join(__dirname, "..", "app", "api", "ai-fixes", "route.ts"), "utf8");
-  assert.ok(routeSrc.includes("authorizePaidTier"), "ai-fixes route must call authorizePaidTier");
+  assert.ok(routeSrc.includes("handleFixes"), "route delegates to tested shared delivery handler");
   assert.ok(!/body\.paymentHash/.test(routeSrc), "ai-fixes route must not read body.paymentHash");
 
-  console.log("OK — payment tests passed (amount, description, replay, tamper, expiry controls)");
+  console.log("OK — payment tests passed (amount, product boundary, stable purchase key, tamper, expiry controls)");
 })().catch((err) => { console.error(err); process.exit(1); });

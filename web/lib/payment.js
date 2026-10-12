@@ -10,15 +10,9 @@
  *   was requested for exactly PRICE_SATS, at least PRICE_SATS was received,
  *   and the invoice description carries the agentready prefix (externalId,
  *   when phoenixd echoes it, must also carry the agentready prefix).
- * - After a successful check the server issues a short-lived HMAC entitlement
- *   bound to that one paymentHash. /api/ai-fixes requires the entitlement,
- *   re-verifies the payment against phoenixd, and consumes the entitlement
- *   nonce before calling the paid AI provider.
- * - Consumption is in-memory per server instance. That stops casual replay
- *   (the previous behaviour allowed unlimited reuse forever) and bounds any
- *   cross-instance replay to the entitlement TTL. Before running many
- *   instances, move consumption to a shared store; do not widen the TTL
- *   to compensate. This limitation is intentional and documented, not hidden.
+ * - Entitlements authorize verification, not consumption. Shared Postgres
+ *   redemption is keyed by paymentHash in redemption.js. Reissued nonces do
+ *   not grant another purchase. No in-memory paid consumption exists.
  *
  * No secrets are logged or returned. The entitlement secret is
  * AGENTREADY_ENTITLEMENT_SECRET when set, otherwise the server-only
@@ -32,7 +26,6 @@ const EXTERNAL_ID_PREFIX = "agentready-v1";
 const ENTITLEMENT_TTL_MS = 5 * 60 * 1000;
 const HEX64 = /^[0-9a-fA-F]{64}$/;
 
-const consumedNonces = new Map(); // nonce -> expiresAt (ms)
 
 function phoenixConfig() {
   const password = process.env.PHOENIXD_PASSWORD ?? "";
@@ -52,13 +45,13 @@ function isPaidAgentReadyPayment(data) {
   if (!data || typeof data !== "object") return false;
   const paid = data.isPaid === true || data.status === "succeeded";
   if (!paid) return false;
-  const requested = Number(data.requestedSat ?? data.amountSat ?? PRICE_SATS);
+  const requested = Number(data.requestedSat ?? data.amountSat);
   const received = Number(data.receivedSat ?? 0);
   if (!Number.isFinite(requested) || requested !== PRICE_SATS) return false;
   if (!Number.isFinite(received) || received < PRICE_SATS) return false;
-  if (typeof data.description !== "string" || !data.description.startsWith(DESCRIPTION_PREFIX)) return false;
+  if (typeof data.description !== "string" || !(data.description === DESCRIPTION_PREFIX || data.description.startsWith(DESCRIPTION_PREFIX + " - ") || data.description.startsWith(DESCRIPTION_PREFIX + " \u2014 "))) return false;
   if (data.externalId != null && data.externalId !== "") {
-    if (typeof data.externalId !== "string" || !data.externalId.startsWith(EXTERNAL_ID_PREFIX)) return false;
+    if (typeof data.externalId !== "string" || !data.externalId.startsWith(EXTERNAL_ID_PREFIX + ":")) return false;
   }
   return true;
 }
@@ -120,22 +113,7 @@ function verifyEntitlement(token, now = Date.now()) {
   return payload;
 }
 
-/** One-time use per instance. Returns false when the nonce was already spent. */
-function consumeEntitlement(payload, now = Date.now()) {
-  for (const [nonce, exp] of consumedNonces) {
-    if (exp <= now) consumedNonces.delete(nonce);
-  }
-  if (consumedNonces.has(payload.n)) return false;
-  consumedNonces.set(payload.n, payload.exp);
-  return true;
-}
-
-/**
- * Full paid-tier authorization for one request. This is the exact function
- * /api/ai-fixes calls, so tests exercise the real gate, not a copy of it:
- * valid entitlement -> payment re-verified against phoenixd -> one-time
- * consumption. Failed payment verification never burns the entitlement.
- */
+/** Verify proof and settlement; shared fulfillment owns atomic consumption. */
 async function authorizePaidTier(entitlementToken, fetchImpl, now = Date.now()) {
   if (typeof entitlementToken !== "string" || !entitlementToken.trim()) {
     return { paid: false, reason: "missing_entitlement" };
@@ -145,8 +123,7 @@ async function authorizePaidTier(entitlementToken, fetchImpl, now = Date.now()) 
   const verified = await verifyAgentReadyPayment(payload.ph, fetchImpl);
   if (!verified.configured) return { paid: false, reason: "payments_not_configured" };
   if (!verified.paid) return { paid: false, reason: "payment_not_verified" };
-  if (!consumeEntitlement(payload, now)) return { paid: false, reason: "entitlement_reused" };
-  return { paid: true, reason: "ok" };
+  return { paid: true, reason: "ok", paymentHash: payload.ph.toLowerCase() };
 }
 
 module.exports = {
@@ -159,7 +136,5 @@ module.exports = {
   verifyAgentReadyPayment,
   issueEntitlement,
   verifyEntitlement,
-  consumeEntitlement,
   authorizePaidTier,
-  _consumedNonces: consumedNonces,
 };
